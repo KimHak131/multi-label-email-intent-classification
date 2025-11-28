@@ -39,38 +39,49 @@ device = torch.device(
 
 print(f"Using device: {device}")
 
-# Load the model
-print("Loading model...")
-if USE_HF_HUB:
-    print(f"Loading from Hugging Face Hub: {HF_MODEL_ID}")
-    tokenizer = AutoTokenizer.from_pretrained(HF_MODEL_ID)
-    
-    base_model = AutoModelForSequenceClassification.from_pretrained(
-        BASE_MODEL_NAME,
-        num_labels=num_labels,
-        problem_type="multi_label_classification",
-        id2label=id2label,
-        label2id=label2id,
-    )
-    
-    model = PeftModel.from_pretrained(base_model, HF_MODEL_ID)
-else:
-    print(f"Loading from local directory: {FINAL_DIR}")
-    tokenizer = AutoTokenizer.from_pretrained(str(FINAL_DIR))
-    
-    base_model = AutoModelForSequenceClassification.from_pretrained(
-        BASE_MODEL_NAME,
-        num_labels=num_labels,
-        problem_type="multi_label_classification",
-        id2label=id2label,
-        label2id=label2id,
-    )
-    
-    model = PeftModel.from_pretrained(base_model, str(FINAL_DIR))
+# Lazy global model variables to avoid loading at import time
+tokenizer = None
+model = None
+device = device
 
-model.to(device)
-model.eval()
-print("✅ Model loaded successfully!")
+
+def load_model():
+    """Load model into global `model` and `tokenizer` variables lazily.
+
+    This prevents heavy imports at module import time while still keeping
+    the existing functionality for deployments and demos.
+    """
+    global tokenizer, model
+    if tokenizer is not None and model is not None:
+        return
+
+    print("Loading model...")
+    if USE_HF_HUB:
+        print(f"Loading from Hugging Face Hub: {HF_MODEL_ID}")
+        tokenizer = AutoTokenizer.from_pretrained(HF_MODEL_ID)
+        base_model = AutoModelForSequenceClassification.from_pretrained(
+            BASE_MODEL_NAME,
+            num_labels=num_labels,
+            problem_type="multi_label_classification",
+            id2label=id2label,
+            label2id=label2id,
+        )
+        model = PeftModel.from_pretrained(base_model, HF_MODEL_ID)
+    else:
+        print(f"Loading from local directory: {FINAL_DIR}")
+        tokenizer = AutoTokenizer.from_pretrained(str(FINAL_DIR))
+        base_model = AutoModelForSequenceClassification.from_pretrained(
+            BASE_MODEL_NAME,
+            num_labels=num_labels,
+            problem_type="multi_label_classification",
+            id2label=id2label,
+            label2id=label2id,
+        )
+        model = PeftModel.from_pretrained(base_model, str(FINAL_DIR))
+
+    model.to(device)
+    model.eval()
+    print("✅ Model loaded successfully!")
 
 
 # Create a prediction function
@@ -79,8 +90,12 @@ def predict_email_intent(subject: str, body: str, threshold: float = 0.55):
     if not subject and not body:
         return "Please enter email subject and/or body.", {}
     
+    # Ensure model/tokenizer loaded (lazily)
+    if tokenizer is None or model is None:
+        load_model()
+
     # Build text with separator
-    sep = tokenizer.sep_token if tokenizer.sep_token else " "
+    sep = tokenizer.sep_token if tokenizer and tokenizer.sep_token else " "
     text = f"{subject}{sep}{body}".strip()
     
     # Tokenize
