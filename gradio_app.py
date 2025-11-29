@@ -38,6 +38,11 @@ device = torch.device(
 )
 
 print(f"Using device: {device}")
+    try:
+        from web.backend.utils import format_subject_body
+    except Exception:
+        # If run directly or as a script, try relative import fallback
+        from web.backend.utils import format_subject_body
 
 # Lazy global model variables to avoid loading at import time
 tokenizer = None
